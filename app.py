@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+from streamlit_autorefresh import st_autorefresh
 
 # Cấu hình trang web
 st.set_page_config(layout="wide", page_title="Hệ Thống Bấm Số Khoa Sản Pro")
@@ -15,7 +16,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # =======================================================
-# HÀM BẢO MẬT & LƯU TRỮ DỮ LIỆU
+# HÀM BẢO MẬT & LƯU TRỮ DỮ LIỆU ĐỒNG BỘ THỜI GIAN THỰC
 # =======================================================
 DATA_FILE = "dulieu_benhnhan.csv"
 
@@ -37,24 +38,37 @@ def mask_pid(pid):
     start = (len(pid) - 5) // 2
     return pid[:start] + "*****" + pid[start+5:]
 
-# =======================================================
-# 1. KHỞI TẠO BỘ NHỚ
-# =======================================================
-if 'danh_sach' not in st.session_state:
-    st.session_state.danh_sach = load_data()
+# BẮT BUỘC ĐỌC DỮ LIỆU TỪ Ổ CỨNG TRỰC TIẾP ĐỂ ĐỒNG BỘ GIỮA CÁC MÁY
+df_main = load_data()
 
-if 'so_tiep_theo' not in st.session_state:
-    if not st.session_state.danh_sach.empty:
-        try:
-            max_stt = max([int(x) for x in st.session_state.danh_sach['STT']])
-            st.session_state.so_tiep_theo = max_stt + 1
-        except:
-            st.session_state.so_tiep_theo = 1
-    else:
-        st.session_state.so_tiep_theo = 1
+if not df_main.empty:
+    try:
+        so_tiep_theo = max([int(x) for x in df_main['STT']]) + 1
+    except:
+        so_tiep_theo = 1
+else:
+    so_tiep_theo = 1
 
 # =======================================================
-# 2. CHIA 2 MÀN HÌNH (TABS)
+# CÀI ĐẶT THANH BÊN (SIDEBAR) ĐỂ QUẢN LÝ ĐỒNG BỘ
+# =======================================================
+with st.sidebar:
+    st.markdown("### ⚙️ CÀI ĐẶT ĐỒNG BỘ")
+    st.info("💡 Mẹo: CHỈ BẬT ô bên dưới đối với Tivi ngoài sảnh chờ. Máy tính của Lễ tân và Bác sĩ không nên bật để tránh bị ngắt quãng khi thao tác.")
+    
+    tu_dong = st.checkbox("📺 Bật Tự Động Cập Nhật (3s/lần)")
+    if tu_dong:
+        st_autorefresh(interval=3000, key="auto_refresh_dashboard")
+        st.success("Đang tự động lấy dữ liệu mới liên tục...")
+        
+    st.markdown("---")
+    st.markdown("### 👨‍⚕️ DÀNH CHO BÁC SĨ")
+    st.write("Bấm nút dưới đây để lấy danh sách khách hàng mới nhất từ Lễ tân truyền vào:")
+    if st.button("🔄 Lấy Dữ Liệu Mới Nhất", use_container_width=True):
+        st.rerun()
+
+# =======================================================
+# CHIA 2 MÀN HÌNH (TABS)
 # =======================================================
 tab_admin, tab_hien_thi = st.tabs(["⚙️ MÀN HÌNH ĐIỀU KHIỂN (Nhân viên)", "📺 MÀN HÌNH CHỜ (Dashboard)"])
 
@@ -63,7 +77,6 @@ with tab_admin:
     st.header("Hệ Thống Quản Lý Luồng Bệnh Nhân")
     
     col_letan, col_bacsi, col_trakq = st.columns([1, 2, 1])
-    df = st.session_state.danh_sach
     
     # [CỘT 1] LỄ TÂN
     with col_letan:
@@ -74,7 +87,7 @@ with tab_admin:
             submit_btn = st.form_submit_button("🖨️ Cấp Số", type="primary")
             
             if submit_btn and pid_input:
-                stt_moi = f"{st.session_state.so_tiep_theo:03d}"
+                stt_moi = f"{so_tiep_theo:03d}"
                 new_row = pd.DataFrame({
                     'STT': [stt_moi], 
                     'PID': [pid_input], 
@@ -82,10 +95,8 @@ with tab_admin:
                     'Trang_thai': ['Chờ khám'], 
                     'Phong': ['Đang chờ']
                 })
-                df = pd.concat([df, new_row], ignore_index=True)
-                st.session_state.danh_sach = df
-                save_data(df)
-                st.session_state.so_tiep_theo += 1
+                df_main = pd.concat([df_main, new_row], ignore_index=True)
+                save_data(df_main)
                 st.rerun()
 
     # [CỘT 2] BÁC SĨ TỰ GỌI KHÁM TRỰC TIẾP TẠI PHÒNG
@@ -97,45 +108,41 @@ with tab_admin:
             with col_container:
                 st.markdown(f"📍 **{ten_phong}**")
                 
-                # Phân đoạn 1: Thông tin người đang khám & Nút xử lý
-                bn_dang_kham = df[(df['Trang_thai'] == 'Đang phục vụ') & (df['Phong'] == ten_phong)]
+                # Thông tin người đang khám
+                bn_dang_kham = df_main[(df_main['Trang_thai'] == 'Đang phục vụ') & (df_main['Phong'] == ten_phong)]
                 if not bn_dang_kham.empty:
                     info = bn_dang_kham.iloc[0]
                     st.success(f"Đang siêu âm:\n\n**{info['STT']} - {info['PID']} ({info['Loai_sieu_am']})**")
                     c1, c2 = st.columns(2)
                     with c1:
                         if st.button("⏩ Qua lượt", key=f"q_{ten_phong}"):
-                            df.loc[df['STT'] == info['STT'], 'Trang_thai'] = 'Qua lượt'
-                            save_data(df); st.rerun()
+                            df_main.loc[df_main['STT'] == info['STT'], 'Trang_thai'] = 'Qua lượt'
+                            save_data(df_main); st.rerun()
                     with c2:
                         if st.button("✅ Trả KQ", key=f"k_{ten_phong}"):
-                            df.loc[df['STT'] == info['STT'], 'Trang_thai'] = 'Chờ trả kết quả'
-                            save_data(df); st.rerun()
+                            df_main.loc[df_main['STT'] == info['STT'], 'Trang_thai'] = 'Chờ trả kết quả'
+                            save_data(df_main); st.rerun()
                 else: 
                     st.info("Phòng đang trống")
                 
                 st.write("---")
                 
-                # Phân đoạn 2: Danh sách chờ để gọi người mới
-                ds_cho = df[df['Trang_thai'].isin(['Chờ khám', 'Qua lượt'])].copy()
+                # Gọi người mới
+                ds_cho = df_main[df_main['Trang_thai'].isin(['Chờ khám', 'Qua lượt'])].copy()
                 if not ds_cho.empty:
-                    # Rút gọn nhãn: Xóa chữ [Chờ khám], chỉ hiện thị STT - PID. Nếu qua lượt thì thêm cái cờ cảnh báo nhỏ.
                     ds_cho['Nhan_hien_thi'] = ds_cho['STT'] + " - " + ds_cho['PID'] + " (" + ds_cho['Loai_sieu_am'] + ")"
                     ds_cho.loc[ds_cho['Trang_thai'] == 'Qua lượt', 'Nhan_hien_thi'] = "⚠️ " + ds_cho['Nhan_hien_thi']
                     
                     bn_chon = st.selectbox("Chọn người tiếp theo:", ds_cho['Nhan_hien_thi'], key=f"sel_{ten_phong}")
                     
                     if st.button(f"📢 Gọi vào {ten_phong}", key=f"call_{ten_phong}"):
-                        # Trích xuất số thứ tự an toàn (cắt bỏ icon cảnh báo nếu có)
                         stt_chon = bn_chon.replace("⚠️ ", "").split(" - ")[0]
                         
-                        df.loc[(df['Trang_thai'] == 'Đang phục vụ') & (df['Phong'] == ten_phong), 'Trang_thai'] = 'Chờ trả kết quả'
-                        df.loc[df['STT'] == stt_chon, 'Trang_thai'] = 'Đang phục vụ'
-                        df.loc[df['STT'] == stt_chon, 'Phong'] = ten_phong
+                        df_main.loc[(df_main['Trang_thai'] == 'Đang phục vụ') & (df_main['Phong'] == ten_phong), 'Trang_thai'] = 'Chờ trả kết quả'
+                        df_main.loc[df_main['STT'] == stt_chon, 'Trang_thai'] = 'Đang phục vụ'
+                        df_main.loc[df_main['STT'] == stt_chon, 'Phong'] = ten_phong
                         
-                        st.session_state.danh_sach = df
-                        save_data(df)
-                        st.rerun()
+                        save_data(df_main); st.rerun()
                 else:
                     st.write("*Không có bệnh nhân chờ*")
                 
@@ -147,26 +154,26 @@ with tab_admin:
     # [CỘT 3] HOÀN TẤT
     with col_trakq:
         st.subheader("3. Quầy Trả KQ")
-        ds_kq = df[df['Trang_thai'] == 'Chờ trả kết quả']
+        ds_kq = df_main[df_main['Trang_thai'] == 'Chờ trả kết quả']
         if not ds_kq.empty:
             bn_done = st.selectbox("BN nhận kết quả:", ds_kq['STT'] + " - " + ds_kq['PID'])
             if st.button("🏁 Đã Nhận KQ"):
-                df.loc[df['STT'] == bn_done.split(" - ")[0], 'Trang_thai'] = 'Hoàn thành'
-                save_data(df); st.rerun()
+                df_main.loc[df_main['STT'] == bn_done.split(" - ")[0], 'Trang_thai'] = 'Hoàn thành'
+                save_data(df_main); st.rerun()
         else:
             st.info("Chưa có KQ.")
 
     st.divider()
     if st.button("🗑️ Reset Dữ Liệu Ngày Mới"):
         if os.path.exists(DATA_FILE): os.remove(DATA_FILE)
-        st.session_state.clear(); st.rerun()
+        st.rerun()
 
     st.write("📊 DỮ LIỆU HIS TỔNG HỢP:")
-    st.dataframe(st.session_state.danh_sach, use_container_width=True)
+    st.dataframe(df_main, use_container_width=True)
 
 # ----------------- TẤT CẢ CODE CHO TAB HIỂN THỊ (BẢO MẬT) -----------------
 with tab_hien_thi:
-    df_view = st.session_state.danh_sach.copy()
+    df_view = df_main.copy()
     df_view = df_view[df_view['Trang_thai'] != 'Hoàn thành']
     
     st.markdown("<h2 style='text-align: center; color: #1E3A8A; background-color: #E0F2FE; padding: 10px;'>PHÒNG KHÁM SẢN - DANH SÁCH CHỜ</h2>", unsafe_allow_html=True)

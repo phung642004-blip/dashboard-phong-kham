@@ -22,7 +22,6 @@ DATA_FILE = "dulieu_benhnhan.csv"
 def load_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE, dtype=str)
-        # Tự động nâng cấp dữ liệu cũ (nếu chưa có cột Loai_sieu_am)
         if 'Loai_sieu_am' not in df.columns:
             df['Loai_sieu_am'] = "2D" 
         return df
@@ -66,7 +65,7 @@ with tab_admin:
     col1, col2, col3, col4 = st.columns(4)
     df = st.session_state.danh_sach
     
-    # [CỘT 1] LỄ TÂN QUÉT MÃ VÀ CHỌN LOẠI SIÊU ÂM
+    # [CỘT 1] LỄ TÂN
     with col1:
         st.subheader("1. Lễ Tân")
         with st.form("form_nhan_benh", clear_on_submit=True):
@@ -91,12 +90,11 @@ with tab_admin:
                 st.success(f"✅ Cấp số {stt_moi} ({loai_sa_input})")
                 st.rerun()
 
-    # [CỘT 2] BÁC SĨ GỌI KHÁM (PHÒNG B1040, B1041)
+    # [CỘT 2] BÁC SĨ GỌI KHÁM
     with col2:
         st.subheader("2. Gọi Khám")
         ds_cho = df[df['Trang_thai'] == 'Chờ khám']
         if not ds_cho.empty:
-            # Hiển thị thêm loại siêu âm để bác sĩ dễ gọi đúng người
             lua_chon_bn = st.selectbox("Chọn bệnh nhân đang chờ:", ds_cho['STT'] + " - " + ds_cho['PID'] + " (" + ds_cho['Loai_sieu_am'] + ")")
             phong_kham = st.selectbox("Chọn phòng siêu âm:", ["Phòng B1040", "Phòng B1041"])
             
@@ -166,6 +164,18 @@ with tab_admin:
     st.divider()
     st.write("📊 DỮ LIỆU HIS TỔNG HỢP:")
     st.dataframe(st.session_state.danh_sach, use_container_width=True)
+    
+    # NÚT RESET DỮ LIỆU ĐƯỢC THÊM VÀO ĐÂY
+    st.markdown("---")
+    if st.button("🗑️ Xóa Toàn Bộ Dữ Liệu (Reset Ngày Mới)"):
+        # Reset lại bộ nhớ
+        st.session_state.danh_sach = pd.DataFrame(columns=['STT', 'PID', 'Loai_sieu_am', 'Trang_thai', 'Phong'])
+        st.session_state.so_tiep_theo = 1
+        # Xóa file lưu trữ
+        if os.path.exists(DATA_FILE):
+            os.remove(DATA_FILE)
+        # Tải lại trang web
+        st.rerun()
 
 # ----------------- TẤT CẢ CODE CHO TAB HIỂN THỊ -----------------
 with tab_hien_thi:
@@ -179,7 +189,6 @@ with tab_hien_thi:
         st.markdown("<h4 style='text-align: center; color: gray; margin-top: 50px;'>Hệ thống đã sẵn sàng. Vui lòng cấp số tại quầy Lễ tân.</h4>", unsafe_allow_html=True)
     else:
         df_hien_thi['PID_An'] = df_hien_thi['PID'].apply(mask_pid)
-        # Đính kèm loại hình siêu âm vào sau mã hiển thị để bệnh nhân dễ theo dõi
         df_hien_thi['Hien_thi'] = df_hien_thi['STT'] + ' - ' + df_hien_thi['PID_An'] + ' (' + df_hien_thi['Loai_sieu_am'] + ')'
         
         cho_kham = df_hien_thi[df_hien_thi['Trang_thai'] == 'Chờ khám']['Hien_thi'].tolist()
@@ -203,7 +212,6 @@ with tab_hien_thi:
                     else:
                         st.markdown("<div style='border: 2px dashed #9CA3AF; padding: 30px; text-align: center; background-color: #F9FAFB;'><h3 style='color: #9CA3AF; margin: 0;'>TRỐNG</h3></div>", unsafe_allow_html=True)
             
-            # Cập nhật tên phòng trên giao diện ngoài sảnh
             render_phong("Phòng B1040", c_p1)
             render_phong("Phòng B1041", c_p2)
             
